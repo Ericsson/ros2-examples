@@ -14,6 +14,7 @@
 
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -31,6 +32,7 @@ public:
   MinimalSubscriberWithUniqueNetworkFlow()
   : Node("minimal_subscriber_with_unique_network_flow")
   {
+    // Create subscription with unique network flow
     // Enable unique network flow via options
     auto options_1 = rclcpp::SubscriptionOptions();
     options_1.require_unique_network_flow = RMW_UNIQUE_NETWORK_FLOW_STRICTLY_REQUIRED;
@@ -40,21 +42,31 @@ public:
         &MinimalSubscriberWithUniqueNetworkFlow::topic_1_callback, this,
         _1), options_1);
 
-    // Unique network flow is disabled by default
+    // Create subscription without unique network flow
+    // Unique network flow is disabled in default options
     auto options_2 = rclcpp::SubscriptionOptions();
     subscription_2_ = this->create_subscription<std_msgs::msg::String>(
       "topic_2", 10, std::bind(
         &MinimalSubscriberWithUniqueNetworkFlow::topic_2_callback, this,
         _1), options_2);
 
-    // Print network flows and check for uniqueness
-    auto network_flows_1 = subscription_1_->get_network_flow();
-    auto network_flows_2 = subscription_2_->get_network_flow();
-    print_network_flows(network_flows_1);
-    print_network_flows(network_flows_2);
-    if (!are_network_flows_unique(network_flows_1, network_flows_2)) {
-      RCLCPP_ERROR(this->get_logger(), "Network flows across subscriptions are not unique");
+    // Get network flows
+    auto flows_1 = subscription_1_->get_network_flow();
+    auto flows_2 = subscription_2_->get_network_flow();
+
+    // Check if network flow is unique
+    for (auto flow_1 : flows_1) {
+      for (auto flow_2 : flows_2) {
+        if (flow_1 == flow_2) {
+          RCLCPP_ERROR(this->get_logger(), "Network flows across subscriptions are not unique");
+          break;
+        }
+      }
     }
+
+    // Print network flows
+    print_network_flows(flows_1);
+    print_network_flows(flows_2);
   }
 
 private:
@@ -66,35 +78,33 @@ private:
   {
     RCLCPP_INFO(this->get_logger(), "Topic 2 news: '%s'", msg->data.c_str());
   }
-  /// Compare network flows
-  /*
-   * Compare two network flows
-   * \return false if network flows are not unique true otherwise
-   */
-  bool are_network_flows_unique(
-    const std::vector<rclcpp::NetworkFlow> & network_flows_1,
-    const std::vector<rclcpp::NetworkFlow> & network_flows_2) const
-  {
-    if (network_flows_1.size() > 0 && network_flows_2.size() > 0) {
-      for (auto network_flow_1 : network_flows_1) {
-        for (auto network_flow_2 : network_flows_2) {
-          if (network_flow_1 == network_flow_2) {
-            return false;
-          }
-        }
-      }
-    }
-    return true;
-  }
-  /// Print network flows
-  void print_network_flows(const std::vector<rclcpp::NetworkFlow> & network_flows) const
+  /// Print network flows in JSON-like format
+  void print_network_flows(const std::vector<std::map<std::string, std::string>> & network_flows) const
   {
     std::ostringstream stream;
-    for (auto network_flow : network_flows) {
-      stream << network_flow << ", ";
+    stream << "{\"networkFlows\": [";
+    bool skip_1 = true;
+    for (auto flow : network_flows) {
+      if (skip_1) {
+        skip_1 = false;
+      } else {
+        stream << ",";
+      }
+      stream << "{" << std::endl;
+      bool skip_2 = true;
+      for (auto key_val : flow) {
+        if (skip_2) {
+          skip_2 = false;
+        } else {
+          stream << "," << std::endl;
+        }
+        stream << "\"" << key_val.first << "\": \"" << key_val.second << "\"";
+      }
+      stream << "}";
     }
+    stream << "]}";
     RCLCPP_INFO(
-      this->get_logger(), "Subscription created with network flows: '%s'",
+      this->get_logger(), "%s",
       stream.str().c_str());
   }
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr subscription_1_;
